@@ -88,7 +88,7 @@ function App() {
     const button = document.querySelector<HTMLButtonElement>('#complete-button');
     if (button) {
       button.disabled = state.matches('completing');
-      button.textContent = state.matches('completing') ? 'Loading...' : 'Complete Sentence';
+      button.textContent = state.matches('completing') ? 'Loading...' : 'Complete with AI';
     }
   }, [state]);
 
