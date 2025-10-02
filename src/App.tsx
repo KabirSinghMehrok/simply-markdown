@@ -11,15 +11,16 @@ import { sentenceCompletionMachine } from './sentenceCompletionMachine';
 
 
 function App() {
-  const editorRef = useRef(null);
+  const editorRef = useRef<EditorView | null>(null);
   const [state, send] = useMachine(sentenceCompletionMachine);
+  const editorObserverRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     console.log("XState context updated:", state.context.editorContent);
   }, [state.context.editorContent]);
 
   useEffect(() => {
-    if (state.context.completion) {
+    if (state.context.completion && editorRef.current) {
       const { state: editorState } = editorRef.current;
       const { tr } = editorState;
       const { from, to } = editorState.selection;
@@ -27,6 +28,69 @@ function App() {
       editorRef.current.dispatch(tr);
     }
   }, [state.context.completion]);
+
+  useEffect(() => {
+    const editorNode = editorObserverRef.current;
+    if (!editorNode) return;
+
+    const addCompleteButton = (menubar: Element) => {
+      if (menubar.querySelector('#complete-button')) return;
+
+      const button = document.createElement('button');
+      button.id = 'complete-button';
+      button.type = 'button';
+      button.innerHTML = 'Complete with AI';
+      button.style = ""
+      button.style.color = 'white';
+      button.style.padding = '2px 10px';
+      button.style.borderRadius = '5px';
+      button.style.cursor = 'pointer';
+      button.style.marginLeft = '10px';
+      button.style.width = '140px'
+      button.style.backgroundImage = 'linear-gradient(to right, #77A1D3 0%, #79CBCA  51%, #77A1D3  100%)';
+      button.style.border = '0px';
+      button.style.backgroundSize = '200% auto';
+      button.style.transition = '0.5s';
+      button.onmouseenter = () => {
+        button.style.backgroundPosition = 'right center';
+      }
+      button.onmouseleave = () => {
+        button.style.backgroundPosition = 'left center';
+      }
+      button.onclick = () => send({ type: 'COMPLETE_BUTTON_CLICKED' });
+      menubar.appendChild(button);
+    };
+
+    const observer = new MutationObserver(() => {
+      const menubar = editorNode.querySelector('.ProseMirror-menubar');
+      if (menubar) {
+        addCompleteButton(menubar);
+      }
+    });
+
+    const menubar = editorNode.querySelector('.ProseMirror-menubar');
+    if (menubar) {
+      addCompleteButton(menubar);
+    }
+
+    observer.observe(editorNode, { childList: true, subtree: true });
+
+    return () => {
+      observer.disconnect();
+      const button = document.querySelector('#complete-button');
+      if (button && button.parentNode) {
+        button.parentNode.removeChild(button);
+      }
+    };
+  }, [send]);
+
+  useEffect(() => {
+    const button = document.querySelector<HTMLButtonElement>('#complete-button');
+    if (button) {
+      button.disabled = state.matches('completing');
+      button.textContent = state.matches('completing') ? 'Loading...' : 'Complete Sentence';
+    }
+  }, [state]);
 
   useEffect(() => {
     // Create a text-generation pipeline
@@ -37,12 +101,20 @@ function App() {
         marks: schema.spec.marks
       })
 
-      editorRef.current = new EditorView(document.querySelector("#editor"), {
+      const editorElement = document.querySelector("#editor");
+      const contentElement = document.querySelector("#content");
+
+      if (!editorElement || !contentElement) {
+        return;
+      }
+
+      editorRef.current = new EditorView(editorElement, {
         state: EditorState.create({
-          doc: DOMParser.fromSchema(mySchema).parse(document.querySelector("#content")),
+          doc: DOMParser.fromSchema(mySchema).parse(contentElement),
           plugins: exampleSetup({ schema: mySchema })
         }),
         dispatchTransaction: transaction => {
+          if (!editorRef.current) return;
           const { state, transactions } = editorRef.current.state.applyTransaction(transaction);
           editorRef.current.updateState(state);
 
@@ -61,9 +133,11 @@ function App() {
 
 
     return () => {
-      editorRef.current.destroy()
+      if (editorRef.current) {
+        editorRef.current.destroy()
+      }
     }
-  }, [])
+  }, [send])
 
 
   return (
@@ -71,13 +145,7 @@ function App() {
       <div id="content" style={{ display: 'none' }}>
         <p>Hello, this is the content</p>
       </div>
-      <div id="editor" />
-      <button
-        onClick={() => send({ type: 'COMPLETE_BUTTON_CLICKED' })}
-        disabled={state.matches('completing')}
-      >
-        {state.matches('completing') ? 'Loading...' : 'Complete Sentence'}
-      </button>
+      <div id="editor" ref={editorObserverRef} />
     </div>
   )
 }
